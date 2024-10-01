@@ -149,8 +149,14 @@ sub _action_token_endpoint {
 sub _action_well_known {
   my ($self, $c) = @_;
   my $provider = $self->provider;
-  my $req_url  = $c->req->url->to_abs;
-  my $to_abs   = sub { $req_url->path(Mojo::URL->new(shift)->path)->to_abs };
+
+  if ($provider->{key} eq 'invalid') {
+    $c->render(text => 'FAIL INVALID', status => 400);
+    return;
+  }
+
+  my $req_url = $c->req->url->to_abs;
+  my $to_abs  = sub { $req_url->path(Mojo::URL->new(shift)->path)->to_abs };
 
   $c->render(
     template               => 'oauth2/mock/configuration',

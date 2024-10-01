@@ -95,8 +95,8 @@ sub _auth_url {
   $authorize_url = Mojo::URL->new($provider_args->{authorize_url});
   $authorize_url->host($args->{host}) if exists $args->{host};
   $authorize_url->query->append(client_id => $provider_args->{key}, redirect_uri => $args->{redirect_uri});
-  $authorize_url->query->append(scope     => $args->{scope}) if defined $args->{scope};
-  $authorize_url->query->append(state     => $args->{state}) if defined $args->{state};
+  $authorize_url->query->append(scope => $args->{scope}) if defined $args->{scope};
+  $authorize_url->query->append(state => $args->{state}) if defined $args->{state};
   $authorize_url->query($args->{authorize_query}) if exists $args->{authorize_query};
   $authorize_url;
 }
@@ -219,7 +219,11 @@ sub _warmup_openid_provider_p {
   my ($self, $app, $provider) = @_;
 
   return $self->_ua->get_p($provider->{well_known_url})->then(sub {
-    my $tx  = shift;
+    my $tx = shift;
+    if (my $err = $tx->error) {
+      die $err->{message};
+    }
+
     my $res = $tx->result->json;
     $provider->{authorize_url}   = $res->{authorization_endpoint};
     $provider->{end_session_url} = $res->{end_session_endpoint};
@@ -236,6 +240,8 @@ sub _warmup_openid_provider_p {
   })->catch(sub {
     my $err = shift;
     $app->log->error("[OAuth2] Failed to warm up $provider->{well_known_url}: $err");
+    my $cb = $provider->{warmup_error_callback};
+    $cb->($provider, $err) if $cb and ref($cb) eq 'CODE';
   });
 }
 
@@ -526,13 +532,17 @@ Here is an example to add adddition information like "key" and "secret":
 
 For L<OpenID Connect|https://openid.net/connect/>, C<authorize_url> and C<token_url> are configured from the
 C<well_known_url> so these are replaced by the C<well_known_url> key.
+To be able to handle errors during the fetch of the openid configuration via the well known URL you can
+specify a subroutine reference as a callback with the key C<warmup_error_callback>. It will get a reference
+to the provider hash and the error message as parameters.
 
   $app->plugin(OAuth2 => {
     providers => {
       azure_ad => {
-        key            => 'APP_ID',
-        secret         => 'SECRET_KEY',
-        well_known_url => 'https://login.microsoftonline.com/tenant-id/v2.0/.well-known/openid-configuration',
+        key                   => 'APP_ID',
+        secret                => 'SECRET_KEY',
+        well_known_url        => 'https://login.microsoftonline.com/tenant-id/v2.0/.well-known/openid-configuration',
+        warmup_error_callback => sub { my($provider, $error) = @_; warn $error; }
       },
     },
   });
